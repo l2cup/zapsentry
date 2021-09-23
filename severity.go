@@ -5,24 +5,23 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-func sentrySeverity(lvl zapcore.Level) sentry.Level {
-	switch lvl {
-	case zapcore.DebugLevel:
-		return sentry.LevelDebug
-	case zapcore.InfoLevel:
-		return sentry.LevelInfo
-	case zapcore.WarnLevel:
-		return sentry.LevelWarning
-	case zapcore.ErrorLevel:
-		return sentry.LevelError
-	case zapcore.DPanicLevel:
-		return sentry.LevelFatal
-	case zapcore.PanicLevel:
-		return sentry.LevelFatal
-	case zapcore.FatalLevel:
-		return sentry.LevelFatal
-	default:
-		// Unrecognized levels are fatal.
+// zapToSentryLevels maps all zap's debug levels to it's corresponding sentry level.
+var zapToSentryLevels = map[zapcore.Level]sentry.Level{
+	zapcore.DebugLevel:  sentry.LevelDebug,
+	zapcore.InfoLevel:   sentry.LevelInfo,
+	zapcore.WarnLevel:   sentry.LevelWarning,
+	zapcore.ErrorLevel:  sentry.LevelError,
+	zapcore.DPanicLevel: sentry.LevelFatal,
+	zapcore.PanicLevel:  sentry.LevelFatal,
+	zapcore.FatalLevel:  sentry.LevelFatal,
+}
+
+// zapToSentryLevel returns the appropriate sentry.Level for the passed zap level.
+// If a level is not mapped, by default it will return sentry.LevelFatal
+func zapToSentryLevel(lvl zapcore.Level) sentry.Level {
+	sentryLvl, ok := zapToSentryLevels[lvl]
+	if !ok {
 		return sentry.LevelFatal
 	}
+	return sentryLvl
 }

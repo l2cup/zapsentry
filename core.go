@@ -72,11 +72,11 @@ func (c *core) Write(ent zapcore.Entry, fs []zapcore.Field) error {
 
 	/*
 		only when we have local sentryScope to avoid collecting all breadcrumbs ever in a global scope
-	 */
+	*/
 	if c.cfg.EnableBreadcrumbs && c.cfg.BreadcrumbLevel.Enabled(ent.Level) && c.sentryScope != nil {
 		breadcrumb := sentry.Breadcrumb{
 			Data:      clone.fields,
-			Level:     sentrySeverity(ent.Level),
+			Level:     zapToSentryLevel(ent.Level),
 			Message:   ent.Message,
 			Timestamp: ent.Time,
 			Type:      "default",
@@ -88,7 +88,7 @@ func (c *core) Write(ent zapcore.Entry, fs []zapcore.Field) error {
 		event := sentry.NewEvent()
 		event.Message = ent.Message
 		event.Timestamp = ent.Time
-		event.Level = sentrySeverity(ent.Level)
+		event.Level = zapToSentryLevel(ent.Level)
 		event.Platform = "Golang"
 		event.Extra = clone.fields
 		event.Tags = c.cfg.Tags
@@ -131,7 +131,7 @@ func (c *core) scope() *sentry.Scope {
 
 func (c *core) findScope(fs []zapcore.Field) *sentry.Scope {
 	for _, f := range fs {
-		if s  := getScope(f); s != nil {
+		if s := getScope(f); s != nil {
 			return s
 		}
 	}
