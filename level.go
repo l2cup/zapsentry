@@ -5,6 +5,16 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+type LevelEnabler struct {
+	zapcore.Level
+	enableBreadcrumbs bool
+	breadcrumbsLevel  zapcore.Level
+}
+
+func (l *LevelEnabler) Enabled(lvl zapcore.Level) bool {
+	return l.Level.Enabled(lvl) || (l.enableBreadcrumbs && l.breadcrumbsLevel.Enabled(lvl))
+}
+
 // zapToSentryLevels maps all zap's debug levels to it's corresponding sentry level.
 var zapToSentryLevels = map[zapcore.Level]sentry.Level{
 	zapcore.DebugLevel:  sentry.LevelDebug,

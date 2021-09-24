@@ -1,0 +1,49 @@
+# Disabled rules
+enableAllRules = true
+ignoreGeneratedHeader = false
+severity = "warning"
+confidence = 0.8
+errorCode = 1
+warningCode = 0
+
+
+[rule.argument-limit]
+	Disabled = true
+[rule.function-result-limit]
+	Arguments = [2]
+[rule.blank-imports]
+	Disabled = true
+[rule.file-header]
+	Disabled = true
+[rule.max-public-structs]
+	Disabled = true
+[rule.line-length-limit]
+	Disabled = true
+[rule.function-length]
+	Disabled = true
+[rule.package-comments]
+	Disabled = true
+[rule.exported]
+	Disabled = true
+[rule.unused-receiver]
+	Disabled = true
+[rule.add-constant]
+	Disabled = true
+[rule.import-shadowing]
+	Disabled = true
+[rule.unexported-naming]
+	Disabled = true
+
+# Error worthy
+[rule.cognitive-complexity]
+	Arguments = [10]
+	Severity = "warning"
+[directive.specify-disable-reason]
+	Severity = "error"
+[rule.cyclomatic]
+	Arguments = [10]
+	Severity = "warning"
+[rule.empty-block]
+	Severity = "error"
+[rule.empty-lines]
+	Severity = "error"

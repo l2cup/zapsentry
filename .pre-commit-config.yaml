@@ -1,0 +1,12 @@
+---
+repos:
+  - repo: https://github.com/tekwizely/pre-commit-golang
+    rev: master
+    hooks:
+      - id: go-vet-repo-mod
+        verbose: true
+
+      - id: go-revive-repo-mod
+        always_run: true
+        args: ['-config', './revive.toml', '-formatter','stylish','--']
+        verbose: true
