@@ -9,13 +9,14 @@ import (
 
 // Configuration is a minimal set of parameters for Sentry integration.
 type Configuration struct {
-	Tags              map[string]string
-	FieldsToTagsKeys  []string
-	Environment       string
-	DisableStacktrace bool
-	Level             zapcore.Level
-	BreadcrumbLevel   zapcore.Level
-	EnableBreadcrumbs bool // this feature works only when you explicitly passed new scope
-	FlushTimeout      time.Duration
-	Hub               *sentry.Hub
+	Tags                  map[string]string
+	FieldsToTagsKeys      []string
+	Environment           string
+	DisableStacktrace     bool
+	StacktraceFrameFilter StacktraceFrameFilter
+	Level                 zapcore.Level
+	BreadcrumbLevel       zapcore.Level
+	EnableBreadcrumbs     bool // this feature works only when you explicitly passed new scope
+	FlushTimeout          time.Duration
+	Hub                   *sentry.Hub
 }

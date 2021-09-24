@@ -2,7 +2,6 @@ package zapsentry
 
 import (
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -32,7 +31,8 @@ type core struct {
 	zapcore.LevelEnabler
 	flushTimeout time.Duration
 
-	sentryScope *sentry.Scope
+	sentryScope       *sentry.Scope
+	exceptionProvider ExceptionProvider
 
 	fields            map[string]interface{}
 	registeredTagKeys map[string]byte
@@ -56,8 +56,17 @@ func NewCore(cfg Configuration, factory SentryClientFactory) (zapcore.Core, erro
 			breadcrumbsLevel:  cfg.BreadcrumbLevel,
 			enableBreadcrumbs: cfg.EnableBreadcrumbs,
 		},
-		flushTimeout: 5 * time.Second,
-		fields:       make(map[string]interface{}),
+		flushTimeout:      5 * time.Second,
+		fields:            make(map[string]interface{}),
+		exceptionProvider: nopExceptionProvider,
+	}
+
+	if !cfg.DisableStacktrace {
+		var ff StacktraceFrameFilter = &DefaultStacktraceFrameFilter{}
+		if cfg.StacktraceFrameFilter != nil {
+			ff = cfg.StacktraceFrameFilter
+		}
+		core.exceptionProvider = NewExceptionProvider(ff)
 	}
 
 	if cfg.FlushTimeout > 0 {
@@ -103,20 +112,9 @@ func (c *core) Write(ent zapcore.Entry, fs []zapcore.Field) error {
 		event.Level = zapToSentryLevel(ent.Level)
 		event.Platform = "Golang"
 		event.Extra = clone.fields
+		event.Exception = c.exceptionProvider.Exception(ent)
 		if c.cfg.Environment != "" {
 			event.Environment = c.cfg.Environment
-		}
-
-		if !c.cfg.DisableStacktrace {
-			trace := sentry.NewStacktrace()
-			if trace != nil {
-				trace.Frames = filterFrames(trace.Frames)
-				event.Exception = []sentry.Exception{{
-					Type:       ent.Message,
-					Value:      ent.Caller.TrimmedPath(),
-					Stacktrace: trace,
-				}}
-			}
 		}
 
 		_ = c.client.CaptureEvent(event, nil, c.scope())
@@ -207,26 +205,4 @@ func (c *core) with(fs []zapcore.Field) *core {
 		LevelEnabler: c.LevelEnabler,
 		sentryScope:  c.findScope(fs),
 	}
-}
-
-// follow same logic with sentry-go to filter unnecessary frames
-// ref:
-// https://github.com/getsentry/sentry-go/blob/362a80dcc41f9ad11c8df556104db3efa27a419e/stacktrace.go#L256-L280
-func filterFrames(frames []sentry.Frame) []sentry.Frame {
-	if len(frames) == 0 {
-		return nil
-	}
-	filteredFrames := make([]sentry.Frame, 0, len(frames))
-
-	for i := range frames {
-		// Skip zapsentry and zap internal frames, except for frames in _test packages (for
-		// testing).
-		if (strings.HasPrefix(frames[i].Module, "github.com/TheZeroSlave/zapsentry") ||
-			strings.HasPrefix(frames[i].Function, "go.uber.org/zap")) &&
-			!strings.HasSuffix(frames[i].Module, "_test") {
-			break
-		}
-		filteredFrames = append(filteredFrames, frames[i])
-	}
-	return filteredFrames
 }
