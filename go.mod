@@ -1,6 +1,6 @@
 module github.com/TheZeroSlave/zapsentry
 
-go 1.12
+go 1.16
 
 require (
 	github.com/getsentry/sentry-go v0.11.0
