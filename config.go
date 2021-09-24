@@ -10,58 +10,71 @@ import (
 
 // defaults are the sane defaults for zapsentry configuration
 var defaults = &config{
-	platform:     "Golang",
-	level:        zapcore.ErrorLevel,
-	flushTimeout: 5 * time.Second,
-	tags:         make(map[string]string),
+	level:                 zapcore.ErrorLevel,
+	flushTimeout:          5 * time.Second,
+	platform:              "Golang",
+	disableStacktrace:     false,
+	stackTraceFrameFilter: &DefaultStacktraceFrameFilter{},
+	exceptionProvider:     nopExceptionProvider,
 }
 
 // Config is a minimal set of parameters for Sentry integration.
 type config struct {
-	level             zapcore.Level
-	flushTimeout      time.Duration
-	tags              map[string]string
-	disableStacktrace bool
-	environment       string
-	platform          string
+	level        zapcore.Level
+	flushTimeout time.Duration
+
+	platform    string
+	environment string
+
+	disableStacktrace     bool
+	stackTraceFrameFilter StacktraceFrameFilter
+	exceptionProvider     ExceptionProvider
 }
 
 type Option func(c *core) error
 
 func Level(lvl zapcore.Level) Option {
 	return func(c *core) error {
-		c.cfg.level = lvl
+		c.level = lvl
 		return nil
 	}
 }
 
 func WithTags(tags map[string]string) Option {
 	return func(c *core) error {
-		c.cfg.tags = tags
+		c.events.tags = tags
 		return nil
 	}
 }
 
 func WithEnvironment(env string) Option {
 	return func(c *core) error {
-		c.cfg.environment = env
+		c.events.environment = env
+		return nil
+	}
+}
+
+func WithPlaform(platform string) Option {
+	return func(c *core) error {
+		c.events.platform = platform
 		return nil
 	}
 }
 
 func UseStacktraceFrameFilter(ff StacktraceFrameFilter) Option {
 	return func(c *core) error {
-		if c.cfg.disableStacktrace {
+		if c.events.disabledStacktrace {
 			return errors.New("stacktrace disabled, don't pass stacktrace frame filter opt")
 		}
-		c.stacktraceFrameFilter = ff
+		c.events.stackTraceFrameFilter = ff
 		return nil
 	}
 }
 
 func DisableStacktrace() Option {
 	return func(c *core) error {
-		c.cfg.disableStacktrace = true
+		c.events.disabledStacktrace = true
+		c.events.exceptionProvider = nopExceptionProvider
 		return nil
 	}
 }
@@ -86,7 +99,7 @@ func WithFlushTimeout(after time.Duration) Option {
 		if after == 0 {
 			return errors.New("flush timeout can't be 0")
 		}
-		c.cfg.flushTimeout = after
+		c.flushTimeout = after
 		return nil
 	}
 }
@@ -100,9 +113,9 @@ func UseHub(hub *sentry.Hub) Option {
 
 func ConvertFieldsToTags(keys ...string) Option {
 	return func(c *core) error {
-		c.registeredTagKeys = make(map[string]byte, len(keys))
+		c.events.registeredTagKeys = make(map[string]byte, len(keys))
 		for _, k := range keys {
-			c.registeredTagKeys[k] = 1
+			c.events.registeredTagKeys[k] = 1
 		}
 		return nil
 	}
