@@ -59,6 +59,7 @@ func NewCore(cfg Configuration, factory SentryClientFactory) (zapcore.Core, erro
 		flushTimeout:      5 * time.Second,
 		fields:            make(map[string]interface{}),
 		exceptionProvider: nopExceptionProvider,
+		registeredTagKeys: make(map[string]byte),
 	}
 
 	if !cfg.DisableStacktrace {
@@ -198,11 +199,12 @@ func (c *core) with(fs []zapcore.Field) *core {
 	}
 
 	return &core{
-		client:       c.client,
-		cfg:          c.cfg,
-		flushTimeout: c.flushTimeout,
-		fields:       m,
-		LevelEnabler: c.LevelEnabler,
-		sentryScope:  c.findScope(fs),
+		client:            c.client,
+		cfg:               c.cfg,
+		flushTimeout:      c.flushTimeout,
+		fields:            m,
+		LevelEnabler:      c.LevelEnabler,
+		sentryScope:       c.findScope(fs),
+		exceptionProvider: c.exceptionProvider,
 	}
 }
