@@ -5,13 +5,43 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// These constants define breadcrumb types.
+//
+// https://develop.sentry.dev/sdk/event-payloads/breadcrumbs/#breadcrumb-types
 const (
+	// breadcrumbTypeDefault is the sentry's default breadcrumb type
 	breadcrumbTypeDefault = "default"
-	breadcrumbTypeInfo    = "info"
-	breadcrumbTypeDebug   = "debug"
+	// breadcrumbTypeDefault is the sentry's info breadcrumb type
+	breadcrumbTypeInfo = "info"
+	// breadcrumbTypeDefault is the sentry's debug breadcrumb type
+	breadcrumbTypeDebug = "debug"
 )
 
-func NewBreadcrumb(ent zapcore.Entry, data map[string]interface{}) *sentry.Breadcrumb {
+// breadcrumbs allows creating breadcrumbs
+type breadcrumbs struct {
+	// enabled is true if breadcrumbs are enabled
+	enabled bool
+
+	// level is the level after which breadcrumbs will be added
+	level zapcore.Level
+
+	// localOnly
+	localOnly bool
+}
+
+// newBreadcrumbs returns new breadcrumbs with default settings.
+func newBreadcrumbs() *breadcrumbs {
+	return &breadcrumbs{localOnly: true}
+}
+
+// Enabled returns true if the given level is at or above the breadcrumbs level.
+// It also checks if breadcrumbs are enabled.
+func (bc *breadcrumbs) Enabled(lvl zapcore.Level) bool {
+	return bc.enabled && bc.level.Enabled(lvl)
+}
+
+// new returns a new sentry Breadcrumb from the passed zapcore.Entry and data.
+func (bc *breadcrumbs) new(ent zapcore.Entry, data map[string]interface{}) *sentry.Breadcrumb {
 	return &sentry.Breadcrumb{
 		Data:      data,
 		Message:   ent.Message,
@@ -21,6 +51,7 @@ func NewBreadcrumb(ent zapcore.Entry, data map[string]interface{}) *sentry.Bread
 	}
 }
 
+// zapLevelToBreadcrumbType maps zap's Level to Sentry's breadcrumb type.
 func zapLevelToBreadcrumbType(lvl zapcore.Level) string {
 	switch lvl {
 	case zapcore.InfoLevel:

@@ -6,13 +6,12 @@ import (
 )
 
 type LevelEnabler struct {
-	zapcore.Level
-	enableBreadcrumbs bool
-	breadcrumbsLevel  zapcore.Level
+	level       zapcore.Level
+	breadcrumbs *breadcrumbs
 }
 
 func (l *LevelEnabler) Enabled(lvl zapcore.Level) bool {
-	return l.Level.Enabled(lvl) || (l.enableBreadcrumbs && l.breadcrumbsLevel.Enabled(lvl))
+	return l.level.Enabled(lvl) || l.breadcrumbs.Enabled(lvl)
 }
 
 // zapToSentryLevels maps all zap's debug levels to it's corresponding sentry level.

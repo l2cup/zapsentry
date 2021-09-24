@@ -2,7 +2,6 @@ package zapsentry
 
 import (
 	"errors"
-	"time"
 
 	"github.com/getsentry/sentry-go"
 	"go.uber.org/zap"
@@ -26,55 +25,56 @@ func NewScope() zapcore.Field {
 var _ zapcore.Core = (*core)(nil)
 
 type core struct {
-	client *sentry.Client
-	cfg    *Configuration
 	zapcore.LevelEnabler
-	flushTimeout time.Duration
+	breadcrumbs *breadcrumbs
+	cfg         *config
 
-	sentryScope       *sentry.Scope
-	exceptionProvider ExceptionProvider
+	client      *sentry.Client
+	sentryHub   *sentry.Hub
+	sentryScope *sentry.Scope
+
+	stacktraceFrameFilter StacktraceFrameFilter
+	exceptionProvider     ExceptionProvider
 
 	fields            map[string]interface{}
 	registeredTagKeys map[string]byte
 }
 
-func NewCore(cfg Configuration, factory SentryClientFactory) (zapcore.Core, error) {
+func NewCore(factory SentryClientFactory, opts ...Option) (zapcore.Core, error) {
 	client, err := factory()
 	if err != nil {
 		return zapcore.NewNopCore(), err
 	}
 
-	if cfg.EnableBreadcrumbs && cfg.BreadcrumbLevel > cfg.Level {
+	core := &core{
+		client:                client,
+		fields:                make(map[string]interface{}),
+		cfg:                   defaults,
+		breadcrumbs:           newBreadcrumbs(),
+		registeredTagKeys:     make(map[string]byte),
+		stacktraceFrameFilter: &DefaultStacktraceFrameFilter{},
+		exceptionProvider:     nopExceptionProvider,
+	}
+	for _, o := range opts {
+		err := o(core)
+		if err != nil {
+			return zapcore.NewNopCore(), err
+		}
+	}
+
+	if core.breadcrumbs.enabled && core.breadcrumbs.level > core.cfg.level {
 		return zapcore.NewNopCore(), errors.New("breadcrumb level must be lower than error level")
 	}
-
-	core := core{
-		client: client,
-		cfg:    &cfg,
-		LevelEnabler: &LevelEnabler{
-			Level:             cfg.Level,
-			breadcrumbsLevel:  cfg.BreadcrumbLevel,
-			enableBreadcrumbs: cfg.EnableBreadcrumbs,
-		},
-		flushTimeout:      5 * time.Second,
-		fields:            make(map[string]interface{}),
-		exceptionProvider: nopExceptionProvider,
-		registeredTagKeys: make(map[string]byte),
+	core.LevelEnabler = &LevelEnabler{
+		level:       core.cfg.level,
+		breadcrumbs: core.breadcrumbs,
 	}
 
-	if !cfg.DisableStacktrace {
-		var ff StacktraceFrameFilter = &DefaultStacktraceFrameFilter{}
-		if cfg.StacktraceFrameFilter != nil {
-			ff = cfg.StacktraceFrameFilter
-		}
-		core.exceptionProvider = NewExceptionProvider(ff)
+	if !core.cfg.disableStacktrace {
+		core.exceptionProvider = NewExceptionProvider(core.stacktraceFrameFilter)
 	}
 
-	if cfg.FlushTimeout > 0 {
-		core.flushTimeout = cfg.FlushTimeout
-	}
-
-	return &core, nil
+	return core, nil
 }
 
 func (c *core) With(fs []zapcore.Field) zapcore.Core {
@@ -82,10 +82,7 @@ func (c *core) With(fs []zapcore.Field) zapcore.Core {
 }
 
 func (c *core) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
-	if c.cfg.EnableBreadcrumbs && c.cfg.BreadcrumbLevel.Enabled(ent.Level) {
-		return ce.AddCore(ent, c)
-	}
-	if c.cfg.Level.Enabled(ent.Level) {
+	if c.LevelEnabler.Enabled(ent.Level) {
 		return ce.AddCore(ent, c)
 	}
 	return ce
@@ -97,16 +94,16 @@ func (c *core) Write(ent zapcore.Entry, fs []zapcore.Field) error {
 	/*
 		only when we have local sentryScope to avoid collecting all breadcrumbs ever in a global scope
 	*/
-	if c.cfg.EnableBreadcrumbs && c.cfg.BreadcrumbLevel.Enabled(ent.Level) && c.sentryScope != nil {
-		breadcrumb := NewBreadcrumb(ent, clone.fields)
+	if c.breadcrumbs.Enabled(ent.Level) && c.sentryScope != nil {
+		breadcrumb := c.breadcrumbs.new(ent, clone.fields)
 		c.sentryScope.AddBreadcrumb(breadcrumb, maxLimit)
 	}
 	tags := c.tagsFromFields(fs)
-	for k, v := range c.cfg.Tags {
+	for k, v := range c.cfg.tags {
 		tags[k] = v
 	}
 
-	if ent.Level.Enabled(c.cfg.Level) {
+	if ent.Level.Enabled(c.cfg.level) {
 		event := sentry.NewEvent()
 		event.Message = ent.Message
 		event.Timestamp = ent.Time
@@ -114,8 +111,8 @@ func (c *core) Write(ent zapcore.Entry, fs []zapcore.Field) error {
 		event.Platform = "Golang"
 		event.Extra = clone.fields
 		event.Exception = c.exceptionProvider.Exception(ent)
-		if c.cfg.Environment != "" {
-			event.Environment = c.cfg.Environment
+		if c.cfg.environment != "" {
+			event.Environment = c.cfg.environment
 		}
 
 		_ = c.client.CaptureEvent(event, nil, c.scope())
@@ -123,8 +120,14 @@ func (c *core) Write(ent zapcore.Entry, fs []zapcore.Field) error {
 
 	// We may be crashing the program, so should flush any buffered events.
 	if ent.Level > zapcore.ErrorLevel {
-		c.client.Flush(c.flushTimeout)
+		// revive:disable-next-line:unhandled-error we always return nil here so we don't heed to handle it
+		c.Sync()
 	}
+	return nil
+}
+
+func (c *core) Sync() error {
+	c.client.Flush(c.cfg.flushTimeout)
 	return nil
 }
 
@@ -143,8 +146,8 @@ func (c *core) tagsFromFields(fs []zapcore.Field) map[string]string {
 }
 
 func (c *core) hub() *sentry.Hub {
-	if c.cfg.Hub != nil {
-		return c.cfg.Hub
+	if c.sentryHub != nil {
+		return c.sentryHub
 	}
 	return sentry.CurrentHub()
 }
@@ -175,11 +178,6 @@ func getScope(field zapcore.Field) *sentry.Scope {
 	return nil
 }
 
-func (c *core) Sync() error {
-	c.client.Flush(c.flushTimeout)
-	return nil
-}
-
 func (c *core) with(fs []zapcore.Field) *core {
 	// Copy our map.
 	m := make(map[string]interface{}, len(c.fields))
@@ -199,12 +197,14 @@ func (c *core) with(fs []zapcore.Field) *core {
 	}
 
 	return &core{
-		client:            c.client,
-		cfg:               c.cfg,
-		flushTimeout:      c.flushTimeout,
-		fields:            m,
-		LevelEnabler:      c.LevelEnabler,
-		sentryScope:       c.findScope(fs),
-		exceptionProvider: c.exceptionProvider,
+		client:                c.client,
+		cfg:                   c.cfg,
+		fields:                m,
+		breadcrumbs:           c.breadcrumbs,
+		LevelEnabler:          c.LevelEnabler,
+		sentryScope:           c.findScope(fs),
+		stacktraceFrameFilter: c.stacktraceFrameFilter,
+		exceptionProvider:     c.exceptionProvider,
+		registeredTagKeys:     c.registeredTagKeys,
 	}
 }
