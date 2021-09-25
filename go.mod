@@ -1,6 +1,6 @@
 module github.com/l2cup/zapsentry
 
-go 1.17
+go 1.16
 
 require (
 	github.com/getsentry/sentry-go v0.11.0

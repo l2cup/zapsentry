@@ -1,7 +1,7 @@
 ---
 repos:
   - repo: https://github.com/tekwizely/pre-commit-golang
-    rev: master
+    rev: v1.0.0-beta.4
     hooks:
       - id: go-vet-repo-mod
         verbose: true
