@@ -2,8 +2,6 @@ package zapsentry
 
 import (
 	"errors"
-	"fmt"
-	"log"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -142,7 +140,6 @@ func getScope(field zapcore.Field) *sentry.Scope {
 func getHub(field zapcore.Field) *sentry.Hub {
 	if field.Type == zapcore.SkipType && field.Key == zapSentryHubKey {
 		if hub, ok := field.Interface.(*sentry.Hub); ok {
-			log.Println("in hub casting", fmt.Sprintf("type %T", hub))
 			return hub
 		}
 	}
