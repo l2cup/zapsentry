@@ -2,6 +2,8 @@ package zapsentry
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -13,15 +15,8 @@ const (
 	maxLimit = 1000
 
 	zapSentryScopeKey = "_zapsentry_scope_"
+	zapSentryHubKey   = "_zapsentry_hub_"
 )
-
-func NewScope() zapcore.Field {
-	f := zap.Skip()
-	f.Interface = sentry.NewScope()
-	f.Key = zapSentryScopeKey
-
-	return f
-}
 
 var _ zapcore.Core = (*core)(nil)
 
@@ -46,6 +41,7 @@ func NewCore(factory SentryClientFactory, opts ...Option) (zapcore.Core, error) 
 	if err != nil {
 		return zapcore.NewNopCore(), err
 	}
+	sentry.CurrentHub().BindClient(client)
 
 	core := &core{
 		client:       client,
@@ -94,12 +90,12 @@ func (c *core) Write(ent zapcore.Entry, fs []zapcore.Field) error {
 	// only when we have local sentryScope to avoid collecting all breadcrumbs ever in a global scope
 	if c.breadcrumbs.Enabled(ent.Level) && c.sentryScope != nil {
 		breadcrumb := c.breadcrumbs.new(ent, clone.fields)
-		c.sentryScope.AddBreadcrumb(breadcrumb, maxLimit)
+		clone.hub().Scope().AddBreadcrumb(breadcrumb, maxLimit)
 	}
 
 	if c.level.Enabled(ent.Level) {
 		event := c.events.new(ent, fs, clone.fields)
-		_ = c.client.CaptureEvent(event, nil, c.scope())
+		_ = clone.hub().CaptureEvent(event)
 	}
 
 	// We may be crashing the program, so should flush any buffered events.
@@ -116,11 +112,48 @@ func (c *core) Sync() error {
 	return nil
 }
 
+func (c *core) findScope(fs []zapcore.Field) *sentry.Scope {
+	for _, f := range fs {
+		if s := getScope(f); s != nil {
+			return s
+		}
+	}
+	return c.scope()
+}
+
+func (c *core) findHub(fs []zapcore.Field) (*sentry.Hub, bool) {
+	for _, f := range fs {
+		if h := getHub(f); h != nil {
+			return h, true
+		}
+	}
+	return c.hub(), false
+}
+
+func getScope(field zapcore.Field) *sentry.Scope {
+	if field.Type == zapcore.SkipType && field.Key == zapSentryScopeKey {
+		if scope, ok := field.Interface.(*sentry.Scope); ok {
+			return scope
+		}
+	}
+	return nil
+}
+
+func getHub(field zapcore.Field) *sentry.Hub {
+	if field.Type == zapcore.SkipType && field.Key == zapSentryHubKey {
+		if hub, ok := field.Interface.(*sentry.Hub); ok {
+			log.Println("in hub casting", fmt.Sprintf("type %T", hub))
+			return hub
+		}
+	}
+	return nil
+}
+
 func (c *core) hub() *sentry.Hub {
 	if c.sentryHub != nil {
 		return c.sentryHub
 	}
-	return sentry.CurrentHub()
+	return sentry.CurrentHub().Clone()
 }
 
 func (c *core) scope() *sentry.Scope {
@@ -128,25 +161,6 @@ func (c *core) scope() *sentry.Scope {
 		return c.sentryScope
 	}
 	return c.hub().Scope()
-}
-
-func (c *core) findScope(fs []zapcore.Field) *sentry.Scope {
-	for _, f := range fs {
-		if s := getScope(f); s != nil {
-			return s
-		}
-	}
-	return c.sentryScope
-}
-
-func getScope(field zapcore.Field) *sentry.Scope {
-	if field.Type == zapcore.SkipType {
-		if scope, ok := field.Interface.(*sentry.Scope); ok && field.Key == zapSentryScopeKey {
-			return scope
-		}
-	}
-
-	return nil
 }
 
 func (c *core) with(fs []zapcore.Field) *core {
@@ -167,14 +181,45 @@ func (c *core) with(fs []zapcore.Field) *core {
 		m[k] = v
 	}
 
+	scope := c.findScope(fs)
+	hub, found := c.findHub(fs)
+	if !found {
+		if c.sentryHub == nil {
+			hub = sentry.NewHub(c.client, scope)
+		}
+		hub = c.sentryHub
+	}
+
 	return &core{
 		LevelEnabler: c.LevelEnabler,
 		breadcrumbs:  c.breadcrumbs,
 		events:       c.events,
 		client:       c.client,
-		sentryScope:  c.findScope(fs),
+		sentryScope:  scope,
+		sentryHub:    hub,
 		level:        c.level,
 		flushTimeout: c.flushTimeout,
 		fields:       m,
 	}
+}
+
+func NewScope() zapcore.Field {
+	f := zap.Skip()
+	f.Interface = sentry.NewScope()
+	f.Key = zapSentryScopeKey
+	return f
+}
+
+func WrapHub(hub *sentry.Hub) zapcore.Field {
+	f := zap.Skip()
+	f.Interface = hub
+	f.Key = zapSentryHubKey
+	return f
+}
+
+func WrapScope(scope *sentry.Scope) zapcore.Field {
+	f := zap.Skip()
+	f.Interface = scope
+	f.Key = zapSentryScopeKey
+	return f
 }
