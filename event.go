@@ -67,12 +67,16 @@ func (e *events) tagsFromFields(fs []zapcore.Field) map[string]string {
 		if _, ok := e.registeredTagKeys[f.Key]; !ok {
 			continue
 		}
-		if f.Type == zapcore.ObjectMarshalerType || f.Type == zapcore.ReflectType {
+		if f.Type == zapcore.ObjectMarshalerType {
 			tags = e.tryAddObjectTag(f, tags)
 			continue
 		}
 		if f.Type == zapcore.StringType {
 			tags[f.Key] = f.String
+			continue
+		}
+		if f.Type == zapcore.ReflectType {
+			tags = e.tryAddObjectTag(f, tags)
 			continue
 		}
 	}
